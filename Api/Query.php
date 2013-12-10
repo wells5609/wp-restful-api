@@ -11,8 +11,7 @@ class Api_Query {
 	
 	public $args = array();
 	
-	public $_matched = array();
-	
+	protected $read_headers = array();
 	
 	public function __construct(){
 		
@@ -37,9 +36,16 @@ class Api_Query {
 			
 			$this->set( 'method', $components[2] );
 			unset($components[2]);
+			
+			$this->readHeaders();
 		}
 	}
 	
+	protected function readHeaders(){
+		
+		
+			
+	}
 	
 	public function import( array $vars, $as_args = false ){
 		global $api;
@@ -140,6 +146,9 @@ class Api_Query {
 		return $string;
 	}
 	
+	/**
+	* Parses string into arguments - accepts paths
+	*/
 	protected function parseStringToArgs( $path ){
 		
 		if ( false !== strpos($path, '/') )
@@ -152,6 +161,9 @@ class Api_Query {
 		unset( $path );	
 	}
 	
+	/**
+	* strips naughty text from uri components
+	*/
 	protected function filterUriComponent( $str ){
 		return trim( wp_filter_nohtml_kses($str), '/' );	
 	}

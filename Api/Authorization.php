@@ -43,7 +43,7 @@ class Api_Authorization {
 		$apikey = $api->query->apikey;
 		$auth_model = get_model('Api_Auth');
 		
-		$response = $auth_model->do_api_request($apikey);	
+		$response = $auth_model->touch($apikey);	
 		
 		if ( !is_array($response) )
 			$api->error('Unauthorized - method requires valid API key.', 'unauthorized');

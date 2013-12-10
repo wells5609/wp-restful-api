@@ -24,6 +24,7 @@ class Api_Main {
 		
 		if ( API_AUTH_REQUESTS ){
 			$this->auth = new Api_Authorization();
+			$this->response->sendAuthHeader(true);
 		}
 		
 		if ( API_USE_FOR_AJAX ){
@@ -36,12 +37,16 @@ class Api_Main {
 	// Send error
 	public function error( $message = 'Error', $response_type = 'not-found' ){
 		
-		die( $this->getResponse(false, $message, $response_type) );
+		die( $this->getResponse(null, $message, $response_type) );
 	}
 	
 	// Sets response content type
 	public function set_content_type( $type ){
 		return $this->response->set_content_type($type);	
+	}
+	
+	public function set_cache( $length ){
+		return $this->response->setCache($length);	
 	}
 	
 	// Returns whether request content type is JSON
@@ -97,7 +102,7 @@ class Api_Main {
 		
 		$this->authorizeRequest($controller);
 		
-		// Controller methods can use $this	
+		// Controller methods can use '$this'	
 		$results = $controller->{$this->callback[1]}( $this->query->get_query_vars() );
 				
 		die( $this->getResponse($results) );
@@ -116,7 +121,8 @@ class Api_Main {
 				
 		do_action('load_ajax_handlers');
 		
-		$_this->response->headers(200, false, true);
+		$_this->response->setHeaderStatusCode(200);
+		$_this->response->send_headers();
 		
 		if ( is_user_logged_in() )
 			do_action( API_AJAX_ACTION_PREFIX . $_this->query->action, $_this->query->get_vars() );
@@ -128,14 +134,17 @@ class Api_Main {
 		exit;	
 	}
 	
+	
 	/** ============ Protected Methods ============ */
 	
 	// Builds the request response
-	protected function getResponse( $results = null, $message = null, $response_type = null, $cache = false ){
+	protected function getResponse( $results = null, $message = null, $response_type = null){
 		
-		$status_code = $this->getHeaderStatusCode($response_type);
+		$this->response->setResults($results);
+		$this->response->setMessage($message);
+		$this->response->setHeaderStatusCode($response_type);
 		
-		$response = $this->response->build($results, $message, $status_code, $cache);
+		$response = $this->response->build();
 		
 		if ( $this->is_json() )
 			$response = $this->to_json($response);
@@ -158,27 +167,6 @@ class Api_Main {
 		$controller = isset($this->query->controller) ? $this->query->controller : $arg;
 		
 		$this->callback = array( ucfirst($controller) . '_ApiController', $this->query->method );
-	}
-	
-	// Returns HTTP status header code from pre-defined response types
-	protected function getHeaderStatusCode( $response_type ){
-		switch (strtolower($response_type)) {
-			case 'ok':
-			default:
-				return 200;
-			case 'found':
-				return 302;
-			case 'not-found':
-			case 'error':
-				return 400;
-			case 'unauthorized':
-			case 'auth-error':
-				return 401;
-			case 'forbidden':
-				return 403;			
-			case 'invalid-method':
-				return 405;
-		}	
 	}
 	
 }

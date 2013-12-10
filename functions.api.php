@@ -6,14 +6,10 @@ function api_controller_init( $group ){
 	global $api;
 	
 	// append _ApiController if not present
-	if ( '_ApiController' !== substr($group, -strlen('_ApiController')) )
+	if ( '_ApiController' !== substr($group, -14) )
 		$controller = ucfirst($group) . '_ApiController';
 	
-	$object = call_user_func( array($controller, 'instance') );
-	
-	if ( !empty($object->routes) )
-		$api->router->add_route_group( $group, $object->routes, $object->route_priority );
-	return;
+	return call_user_func( array($controller, 'register_routes') );
 }
 
 function api_add_route_group($controller, array $routes, $priority = 5, $position = 'top'){
@@ -35,12 +31,28 @@ function api_is_xml(){
 	return $api->is_xml();	
 }
 
+function api_content_type_mime($content_type){
+	switch($content_type){
+		case 'html':
+			return 'text/html';
+		case 'json':
+			return 'application/json';
+		case 'jsonp':
+			return 'text/javascript';
+		case 'xml':
+			return 'text/xml';
+		case 'xhtml':
+			return 'text/xhtml';	
+	}	
+}
+
+
+function api_hash( $data, $key = API_DIGEST_KEY ){
+	return hash_hmac( API_HASH_ALGO, $data, $key );
+}
+
 
 // Authorization
-
-function api_hash( $data ){
-	return hash_hmac(API_HASH_ALGO, $data, API_DIGEST_KEY);
-}
 
 if ( API_AUTH_REQUESTS ){
 		
@@ -56,27 +68,22 @@ if ( API_AUTH_REQUESTS ){
 		if ( null === $auth_object )
 			$auth_object = api_get_auth_object($apikey);
 		
-		return api_generate_auth_token($apikey, $auth_object);
-	}
-	
-	function api_generate_auth_token( $apikey, &$auth_object ){
-		
-		if ( !isset($auth_object->secret_key) || !isset($auth_object->day_start_time) )
+		if ( !isset($auth_object->secret_key) || !isset($auth_object->email) )
 			return false;
 		
-		$prefix = api_hash($auth_object->secret_key);
-		$suffix = api_hash($auth_object->day_start_time);
-		$b64 = base64_encode($prefix . $apikey . $suffix);
-		
-		return str_replace(array('+', '/', '\r', '\n', '='), array('-', '_'), $b64);
+		$prefix = api_hash($auth_object->email, $auth_object->secret_key);
+				
+		return base64_encode($prefix . $apikey);
 	}
 	
 	function api_get_user_apikey( $user_id = null ){
 	
 		if (empty($user_id)) 
 			$user_id = get_current_user_ID();
-	
-		return api_get_apikey_by('user_id', $user_id);
+		
+		$model =& get_model('Api_Auth');	
+		
+		return $model->get_apikey_by('user_id', $user_id);
 	}
 	
 	function api_get_apikey_by( $field, $value ){
