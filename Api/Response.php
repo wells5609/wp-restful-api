@@ -2,41 +2,30 @@
 
 class Api_Response {
 	
-	public $status;
-	
 	public $message;
 	
 	public $content_type;
 	
 	public $results;
 	
-	// Header: status code
-	public $status_code;
+	// Header: others
+	public $headers = array();
 	
 	// Header: cache
 	public $cache = false;
 	
-	// Header: no sniff
-	public $no_sniff = true;
+	public $response = array();
 	
-	// Header: others
-	public $headers = array();
-	
-	public $response = array(
+	public $options = array(
 		'status' => null,
+		'iframes' => 'nosniff',
+		'cache' => false,
 	);
 	
-	protected $send_auth_header = false;
 		
-	protected $content_types = array('html', 'xml', 'json', 'jsonp');
-	
-	
-	public function is_content_type( $type ){
-		return in_array($type, $this->content_types) ? true : false;
-	}
-	
-	public function set_content_type( $type, $force = false ){
-		if ( $this->is_content_type($type) && ( !isset($this->content_type) || $force ) ){
+	public function setContentType( $type, $force = false ){
+		global $api;
+		if ( $api->is_content_type($type) && ( !isset($this->content_type) || $force ) ){
 			$this->content_type = $type;
 			return true;
 		}
@@ -58,51 +47,73 @@ class Api_Response {
 			$this->cache = $cache;
 	}
 	
-	public function setNosniff($nosniff){
-		$this->no_sniff = (bool) $nosniff;	
-	}
-	
 	public function setHeader($name, $value){
 		$this->headers[$name] = $value;	
 	}
 	
-	public function sendAuthHeader( $bool ){
-		$this->send_auth_header = $bool;	
+	public function setOption($name, $value){
+		$this->options[$name] = $value;	
+	}
+	
+	public function setIframes($value){
+		$this->setOption('iframes', false === $value ? 'deny' : $value);	
 	}
 	
 	// Sets HTTP status header code from pre-defined response types or actual code
-	public function setHeaderStatusCode( $response_type ){
+	public function setStatus( $response_type ){
 		
 		if ( is_numeric($response_type) )
-			return $this->status_code = $response_type;	
+			return $this->setOption('status', $response_type);	
 		
 		switch (strtolower($response_type)) {
 			case 'ok':
 			default:
-				return $this->status_code = 200;
+				return $this->setOption('status', 200);
 			case 'found':
-				return $this->status_code = 302;
+				return $this->setOption('status', 302);
 			case 'not-found':
 			case 'error':
-				return $this->status_code = 400;
+				return $this->setOption('status', 400);
 			case 'unauthorized':
 			case 'auth-error':
-				return $this->status_code = 401;
+				return $this->setOption('status', 401);
 			case 'forbidden':
-				return $this->status_code = 403;			
+				return $this->setOption('status', 403);			
 			case 'invalid-method':
-				return $this->status_code = 405;
+				return $this->setOption('status', 405);
 		}	
 	}
 	
-	public function build(){
+	
+	protected function parseHeaders(){
+		global $api;
+		
+		$headers = $api->request->get_headers();
+		
+		if ( isset($headers['accept_encoding']) && (false !== strpos($headers['accept_encoding'], 'gzip')) ){
+			$this->options['gzip'] = true;
+		}
+		
+		if ( isset($headers['accept']) && !isset($this->content_type) ){
+			
+			$types = explode(',', $headers['accept']);
+			
+			foreach($types as $type){
+				$content_type = substr($type, 0, strpos($type, '/'));
+				if ( $api->is_content_type($content_type) )
+					return $this->setContentType($content_type);
+			}	
+		}
+		
+	}
+	
+	public function build( $send_headers = true ){
 	
 		global $api;
 		
-		$status = empty($this->results) ? false : true;
+		$this->parseHeaders();
 		
-		// status
-		$this->response['status'] = $status ? 'ok' : 'error';
+		$status = empty($this->results) ? false : true;
 		
 		// message
 		if ( !empty($this->message) )
@@ -110,62 +121,59 @@ class Api_Response {
 		elseif ( !$status )
 			$this->response['message'] = 'Error';
 		
-		// count
-		if ( $status && is_array($this->results) )
-			$this->response['count'] = count($this->results);
-		
 		// time/queries/memory
 		if ( defined('WP_DEBUG') && WP_DEBUG ){
-			$this->response['time'] = timer_stop(0, 3) . ' s';
-			$this->response['queries'] = get_num_queries();
-			$this->response['memory'] = round(memory_get_peak_usage()/1024/1024, 3) . ' MB';
+			$this->response['debug'] = array( 
+				'time' => timer_stop(0, 3) . ' s',
+				'queries' => get_num_queries(),
+				'memory' => round(memory_get_peak_usage()/1024/1024, 3) . ' MB',
+			);
 		}
 		
 		// results
 		if ( $status )
-			$this->response['results'] = $this->results;
+			$this->response['items'] = $this->results;
 		
-		$this->send_headers();
+		if ( $send_headers )
+			$this->sendHeaders();
 				
-		return array( 'response' => $this->response );
+		return $this->response;
 	}
 	
 	
-	public function send_headers(){
+	public function sendHeaders(){
 	
 		global $api;
 		
 		// header status code
-		if ( empty($this->status_code) ){
+		if ( empty($this->options['status']) ){
 			if ( !empty($this->results) )
-				$this->setHeaderStatusCode(200);
+				$this->setStatus(200);
 			else
-				$this->setHeaderStatusCode(400);
+				$this->setStatus(400);
 		}
 		
-		status_header( $this->status_code );
+		status_header( $this->options['status'] );
 		
-		if ( isset($this->content_type) ){
+		if ( isset($this->content_type) )
 			$content_type = api_content_type_mime($this->content_type);
-		}
-		else {
-			$content_type = $this->get_default_content_type();
-		}
+		else
+			$content_type = $this->getDefaultContentType();
 		
 		$this->setHeader('Content-Type', "{$content_type}; charset=utf-8");
 		
-		if ( true === $this->no_sniff ){
+		if ( true === $this->options['iframes'] ){
 			$this->setHeader('X-Content-Type-Options', 'nosniff');
 		}
 		
-		if ( $this->send_auth_header && isset($api->auth) ){
+		if ( isset($api->auth) && api_config('auth.send_header') ){
 			
-			if ( $api->auth->is_authorized )
-				$auth_header = $api->auth->auth_method;
+			if ( $api->is_authorized() )
+				$auth_header = $api->get_auth_method();
 			else 
 				$auth_header = 'unauthorized';
 			
-			$this->setHeader( 'X-Api-Authorized', $auth_header );
+			$this->setHeader('X-Api-Authorized', $auth_header);
 		}
 		
 		$this->setCacheHeaders();
@@ -176,11 +184,11 @@ class Api_Response {
 		
 	}
 	
-	protected function get_default_content_type(){
+	protected function getDefaultContentType(){
 		global $api;
-		if ( $api->is_ajax )
-			return api_content_type_mime( API_AJAX_DEFAULT_CONTENT_TYPE );
-		return api_content_type_mime( API_DEFAULT_CONTENT_TYPE );
+		if ( $api->is_ajax() )
+			return api_content_type_mime( api_config('ajax.default_content_type') );
+		return api_content_type_mime( api_config('default_content_type') );
 	}
 	
 	protected function setCacheHeaders(){
@@ -189,14 +197,14 @@ class Api_Response {
 			
 			$cache = array_merge(array('expires_offset' => 86400, 'cache_control' => 'Public'), $this->cache);
 			
-			$this->setHeader( 'Expires', gmdate( "D, d M Y H:i:s", time() + $cache['expires_offset'] ) . ' GMT' );
-			$this->setHeader( 'Cache-Control', $cache['cache_control'] . ', max-age=' . $cache['expires_offset'] );
+			$this->setHeader('Expires', gmdate("D, d M Y H:i:s", time() + $cache['expires_offset']) . ' GMT');
+			$this->setHeader('Cache-Control', $cache['cache_control'] . ', max-age=' . $cache['expires_offset']);
 		}
 		else {
 			
-			$this->setHeader( 'Expires', 'Wed, 11 Jan 1984 05:00:00 GMT' );
-			$this->setHeader( 'Cache-Control', 'no-cache, must-revalidate, max-age=0' );
-			$this->setHeader( 'Pragma', 'no-cache' );
+			$this->setHeader('Expires', 'Wed, 11 Jan 1984 05:00:00 GMT');
+			$this->setHeader('Cache-Control', 'no-cache, must-revalidate, max-age=0');
+			$this->setHeader('Pragma', 'no-cache');
 			
 			if ( isset($this->headers['Last-Modified']) )
 				unset( $this->headers['Last-Modified'] );

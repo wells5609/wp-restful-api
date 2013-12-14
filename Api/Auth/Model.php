@@ -105,13 +105,13 @@ class Api_Auth_Model extends Model {
 		$secret_key = wp_filter_post_kses($secret_key);
 		$domain = str_replace(array('http:','https:','//','www.'), '', wp_filter_kses($domain));
 		
-		if ( 32 < strlen($secret_key) || 8 > strlen($secret_key) )
-			return 'Secret key must be between 8 and 32 characters.';
+		if ( 8 >= strlen($secret_key) )
+			return 'Secret key must be more than 8 characters.';
 		
 		$ip = $_SERVER['REMOTE_ADDR'];
 		$user_id = is_user_logged_in() ? get_current_user_ID() : 0;	
 		
-		$apikey = substr(api_hash($ip), 32) . substr(api_hash($user_id . $email), 9);
+		$apikey = api_create_apikey( $ip, $user_id, $email );
 		
 		switch ($user_id) {
 			case 1:
@@ -133,7 +133,7 @@ class Api_Auth_Model extends Model {
 			'domain'			=> $domain,
 			'ip_address'		=> $ip,
 			'time_registered'	=> time(),
-			'secret_key' 		=> $secret_key,
+			'secret_key' 		=> sha1( $secret_key ),
 			'user_id'			=> $user_id,
 		) );
 		
@@ -177,7 +177,12 @@ class Api_Auth_Model extends Model {
 		
 		$this->update( $update, array('apikey' => $apikey) );
 		
-		return array( 'requests_remaining' => $requests_remaining, 'requests_reset' => $reset_hours . ' hours, ' . $reset_mins . ' minutes' );
+		if ( isset($GLOBALS['api']) && isset($GLOBALS['api']->response->response) ){
+			$GLOBALS['api']->response->response['requests_remaining'] = $requests_remaining;
+			$GLOBALS['api']->response->response['requests_reset'] = $reset_hours . ' hours, ' . $reset_mins . ' minutes';
+		}
+		
+		return true;
 	}
 	
 	function retrieve_forgotton_apikey( $email, $secret_key, $domain ){

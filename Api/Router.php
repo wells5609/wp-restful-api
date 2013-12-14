@@ -2,72 +2,58 @@
 
 class Api_Router {
 	
-	public $matches = array();
-	
 	public $route_groups = array();
 	
+	public $matches = array();
+	
 	protected $request_methods = array(
-		'GET', 'POST', 'DELETE', #'PUT',
+		'GET', 'POST', 'DELETE', 'PUT',
 	);
 	
 	protected $api_query_vars = array(
 		'dir'		=> '([^_/][^/]+)',
 		'path'		=> '(.+?)',
-		'q'			=> '([\w][\w\.*]+)',
+		'q'			=> '([\w\.*]+)',
 		'id'		=> '(\d+)',
 		's'			=> '(.?.+?)',
 	);
-	
-	protected $_is_api_request = false;
-	
+		
 	function __construct(){
-		
+	
 		$this->routesInit();
-		
-		add_filter( 'do_parse_request', array($this, 'route'), 0, 3 );
 	}
 	
-	/** @filter do_parse_request
+	/**
+	* Adds query var and regex
 	*
-	* Must return true to continue loading WordPress
+	* @param string $name The query var name
+	* @param string $regex The var's regex, or another registered var name
 	*/
-	function route( $load_wp, $wp, $extra_query_vars ) {
-		
-		global $api;
-			
-		do_action('api/routes/init');
-		
-		if ( $this->matchRoute() ){
-			
-			$api->respond();	
-		}
-		else if ( $this->_is_api_request ){
-			
-			$api->set_content_type('json');
-			$api->error( 'Unknown route' );	
-		}
-		
-		return $load_wp;
-	}
-	
-	public function add_query_var( $name, $regex ){
+	public function addQueryVar( $name, $regex ){
 		$this->api_query_vars[ $name ] = $regex;
 		return $this;	
 	}
-	
-	public function add_route_to_group( $controller, $route, $priority = 5, $position = 'top' ){
-		return $this->add_route_group($controller, array($route), $priority, $position);	
-	}
-	
-	public function add_route_group( $controller, array $routes, $priority = 5, $position = 'top' ){
+		
+	/**
+	* Adds a group of routes.
+	*
+	* Group can already exist in same or other grouping (priority).
+	*
+	* @param string $controller The lowercase controller name
+	* @param array $routes Array of 'route => callback'
+	* @param int $priority The group priority level
+	* @param string $position The routes' position within the group, if exists already
+	*/
+	public function addRouteGroup( $controller, array $routes, $priority = 5, $position = 'top' ){
 		
 		$group = array( $controller => $routes );
 		
+		// priority does not exist, just set to group
 		if ( !isset($this->route_groups[$priority]) || empty($this->route_groups[$priority]) ){
 			$this->route_groups[$priority] = $group;	
 		}
+		// priority exists and controller already in priority
 		elseif ( isset($this->route_groups[$priority][$controller]) ){
-			
 			if ( 'top' === $position ){
 				$this->route_groups[$priority][$controller] = array_merge( $group[$controller], $this->route_groups[$priority][$controller] );
 			}
@@ -76,6 +62,7 @@ class Api_Router {
 			}
 		}
 		else {
+			// priority set but group not in it
 			if ( 'top' === $position ){
 				$this->route_groups[$priority] = array_merge( $group, $this->route_groups[$priority] );
 			}
@@ -87,45 +74,102 @@ class Api_Router {
 		return true;	
 	}
 	
-	function isControllerInGroup($priority, $controller){
+	/**
+	* Adds a route to a group
+	*
+	* @param string $controller The lowercase controller name (e.g. "bike" for "Bike_ApiController")
+	* @param string $route The route path
+	* @param int $priority The group priority level
+	* @param string $position The route's position within the group
+	*/
+	public function addRouteToGroup( $controller, $route, $priority = 5, $position = 'top' ){
+		return $this->addRouteGroup($controller, array($route), $priority, $position);	
+	}
+	
+	/**
+	* Adds an ajax route.
+	*/
+	public function addAjaxRoute( $action, $args = array('q' => 'q'), $priority = 2 ){
+		
+		$route = '';
+		
+		if ( is_string($args) ){
+			$route .= $args;
+		}
+		else {
+			foreach($args as $k => $v){
+				if ( isset($this->api_query_vars[$v]) ){
+					$route .= ':' . $v;			
+				}
+				if ($k !== $v && !is_numeric($k)){
+					$route .= '(' . $k . ')';
+				}
+				$route .= '/';
+			}
+		}
+		
+		$route = rtrim($route, '/');
+		
+		$this->addRouteGroup( 'ajax', array($action . '/' . $route => $action), $priority);
+	}
+	
+	/**
+	* Returns whether controller is in a priority group
+	*
+	* @param int $priority The priority grouping in which to look
+	* @param string $controller The controller name
+	*/
+	public function isControllerInGroup($priority, $controller){
 		return !empty($this->route_groups[$priority][$controller]) ? true : false;	
 	}
 	
-	function matchRoute(){
+	/**
+	* Matches request URI to a route.
+	* Sets up Query if match and returns true
+	*/
+	public function matchRoute(){
 		global $api;
 		
-		$uri = $api->query->request_uri;
+		$uri = $api->get_request_uri();
 		
 		// Don't bother parsing if not an api request
-		if ( 0 !== strpos($uri, APIBASE) ) return false;
+		if (0 !== strpos($uri, APIBASE)) return false;
 		
-		$this->_is_api_request = true;
+		$api->is_api_request = true;
 		
-		$controller = $api->query->controller; // set in Api_Query
-		$uri = $api->query->request_method . ':' . $uri; // prepend HTTP method 
+		$components = explode('/', $uri);
 		
-		ksort($this->route_groups); // sort route groups by priority
+		$controller = $components[1];
+		
+		$api->set_controller( $controller );
+		$api->set_method( $components[2] );
+		
+		$uri = $api->get_request_method() . ':' . $uri; // prepend HTTP method 
+		
+		ksort($this->route_groups);
 		
 		foreach($this->route_groups as $group){
 			
-			if ( !isset($group[$controller]) )	continue; // Controller not in group
+			if (!isset($group[$controller])) continue; // Controller not in group
 			
 			foreach($group[$controller] as $route => $callback){
 		
 				// Replace w/ regex and set matched query var keys
 				$regex_route = $this->regexRoute($route);
 				
-				if ( preg_match('#/?' . $regex_route . '/?#', $uri, $this->matches['values']) ) {
-					unset($this->matches['values'][0]); // remove full match
+				if ( preg_match('#^/?' . $regex_route . '/?$#', $uri, $this->matches['values']) ) {
+					// remove full match
+					unset($this->matches['values'][0]);
 					
-					$api->callback = $callback;
+					$api->set_callback($callback);
+					
 					$api->_matched_route[$route] = $regex_route;
 					
-					$vars = array_combine($this->matches['keys'], $this->matches['values']);
+					$vars = array();
 					
-					$api->query->init( $vars );
-					
-					#do_action( 'api/route/match', $uri );	
+					if ( !empty($this->matches['keys']) && !empty($this->matches['values']) ){
+						$api->set_query_vars( array_combine($this->matches['keys'], $this->matches['values']) );
+					}
 					
 					return true;
 				}
@@ -134,35 +178,29 @@ class Api_Router {
 		
 		return false;
 	}
-		
+	
+	/**
+	* Sets initial route groups
+	*/
 	protected function routesInit(){
 		
 		$this->route_groups = array(
 			
-			0 => array(),
-			1 => array(),
-			
 			2 => array(
-				'ajax' => array(
-					':dir(action)/:q/:id'			=> array('Api_Main', 'ajax'),
-					':dir(action)/:q/:s(extra)'		=> array('Api_Main', 'ajax'),
-					':dir(action)/:q'				=> array('Api_Main', 'ajax'),
-					':dir(action)'					=> array('Api_Main', 'ajax'),
-				),
 				'post' => array(
-					'get/:id'			=> array('Post_ApiController', 'get'),
-					'POST::id/:q'		=> array('Post_ApiController', 'update'),
-					'GET::id'			=> array('Post_ApiController', 'get'),
+					'get/:id'			=> array('Post_ApiController', 'get'),		// Post_ApiController::get( $id )
+					'POST::id/:q'		=> array('Post_ApiController', 'update'),	// Post_ApiController::get( $id, $q )
+					'GET::id'			=> array('Post_ApiController', 'get'),		// etc...
 					'DELETE::id'		=> array('Post_ApiController', 'delete'),
 				),
 			),
 			
-			3 => array(
-				'company' => array(
-					'POST:update/:id/:q/:s(extra)'	=> array('Company_ApiController', 'update_company'),
-					'GET:get/:q'				=> array('Company_ApiController', 'get_company'),
-					'get_company/:q'			=> array('Company_ApiController', 'get_company'),
-					'get_company/:id'			=> array('Company_ApiController', 'get_company'),
+			5 => array(
+				'ajax' => array(
+					':dir(action)/:q/:id'			=> array('Api_Main', 'ajax'), // Will pass $q and $id to action callback
+					':dir(action)/:q/:s(extra)'		=> array('Api_Main', 'ajax'), // Will pass $q and $extra to action callback
+					':dir(action)/:q'				=> array('Api_Main', 'ajax'),
+					':dir(action)'					=> array('Api_Main', 'ajax'),
 				),
 			),
 			
@@ -171,25 +209,35 @@ class Api_Router {
 		return true;	
 	}
 	
+	/**
+	* Takes route and converts query vars (e.g. ":id") to regex (e.g. "(\d+)")
+	* Sets $matches['keys'] for use as query var keys if route match
+	* @param string $route The route path string
+	*/
 	protected function regexRoute($route){
 		global $api;
-		$var_keys = array();
-		$request_method = $api->query->request_method;
 		
+		// set $request_method to actual HTTP method - will be prepended to route if not set 
+		$request_method = $api->request->request_method;
+				
 		foreach($this->request_methods as $method){
 			
 			if ( 0 === strpos($route, $method.':') ){
-				$request_method = $method;
+				// set $request_method to method defined in route
+				$request_method = $method; 
 				$route = str_replace($method.':', '', $route);
 			}
 		}
 		
+		$var_keys = array();
+		
+		// match query vars in route and replace with regex 
 		foreach($this->api_query_vars as $var => $regex){
 			
-			// Match query vars with renamings - e.g. :id(post_id)
-			if ( preg_match_all('/(:{1}(' . $var . ')\((\w+)\)?)/', $route, $matches) && !empty($matches[3]) ){
+			// Match query vars with renamings - e.g. ".../:id(post_id)/..."
+			if ( preg_match_all('/:(' . $var . '){1}\((\w+)\)?/', $route, $matches) && !empty($matches[2]) ){
 				
-				$translations = array_combine( $matches[3], $matches[2] );
+				$translations = array_combine( $matches[2], $matches[1] );
 				
 				foreach($translations as $friendly_key => $regex_key){
 					
@@ -198,7 +246,7 @@ class Api_Router {
 				}
 			}
 			
-			// have non-(re)named var
+			// have non-(re)named var e.g. ".../:q/..."
 			if ( strpos($route, ':' . $var) !== false ){
 				$route = str_replace( ':' . $var, $regex, $route );
 				$var_keys[] = $var;
@@ -207,8 +255,8 @@ class Api_Router {
 		
 		$this->matches['keys'] = $var_keys;
 		
-		// Append APIBASE and controller to $route so as to avoid false matches
-		return $request_method . ':' . APIBASE . '/' . $api->query->controller . '/' . $route;
+		// Append APIBASE and controller to $route to match complete uri and avoid false matches
+		return $request_method . ':' . APIBASE . '/' . $api->controller . '/' . $route;
 	}
 		
 }
