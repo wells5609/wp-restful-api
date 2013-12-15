@@ -24,7 +24,7 @@ The plug-in is divided into a number of classes, described below:
 
 ##URIs
 
-Consistent with the REST "protocol", URIs reflect a "tree-like" or hierarchical relationship. Most URIs can and should be constructed using the following terms and definitions: 
+Consistent with the RESTful style, URIs reflect a hierarchical or tree-like structure. Most URIs can and should be constructed using the following terms and definitions: 
 
 **HTTP verbs** are interpreted to mean the following:
 
