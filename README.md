@@ -1,14 +1,14 @@
 wp-restful-api
 ==============
 
-This plug-in allows you to create a public API for your WordPress-based site or application. 
+Create a public API for your WordPress-based site or application.
 
 ###Features
 
- * Format responses in JSON, XML, or HTML
+ * Respond with JSON, XML, or HTML
  * Make AJAX calls cleaner, faster, and more versatile (no more admin-ajax.php)
- * Define Controllers, their routes, and query variables (by route)
- * Authenticate and limit requests using API keys, HTTP headers, cookies, or nonces (requires set-up)
+ * Define Controller query variables by route
+ * Authenticate and limit requests using cookies, headers, browser keys, or nonces (requires set-up)
 
 
 ##Plug-in Structure
@@ -24,8 +24,6 @@ The plug-in is divided into a number of classes, described below:
 
 ##URIs
 
-URIs reflect a hierarchical or tree-like structure and should gemerally be constructed using the following guidelines: 
-
 **HTTP verbs** are interpreted to mean the following:
 
  * **`GET`** - Retrieve information about a resource object (or collection)
@@ -35,20 +33,25 @@ URIs reflect a hierarchical or tree-like structure and should gemerally be const
 
 The **URI base** determines whether the URI is an API call and will be parsed for routing. Default is "api" and can be changed via the `APIBASE` constant.
 
-**Resources** are top-level objects that determine the routes and callbacks available, as well as the type of data.
+URIs should be **hierarchical** or tree-like in structure.
+
+**Resources** are top-level objects that determine the routes and callbacks available, and potentially the type of data. The resource name comes after the URI base like `yoursite.com/api/RESOURCE/`.
 
 Additional URI components may then further describe the request.
 
 
-####Examples
+####Example
 
-`GET api/organizations/southwest-us` - This could translate to a request for information about an organization called "Southwest US", but it also might translate to a request for information about all organizations in the southwest US.  
+`GET api/organizations/southwest` - Bad URI
 
-More meaningful ("RESTful") URIs might then be:
+This could translate to a request for information about an organization called "Southwest", but it also might translate to a request for information about organizations in the southwest of a country.
 
- * `GET api/organizations/entity/southwest-us` for a single organization called "Southwest US", and
- * `GET api/organizations/us/southwest` or `GET api/organizations/countries/us/regions/southwest` for a listing of organizations in the southwest US.
+More meaningful ("RESTful") URIs might be:
 
+ * `GET api/organizations/entity/southwest` for a single organization called "Southwest", and
+ * `GET api/organizations/countries/us/regions/southwest` for a listing of organizations in the southwest US.
+
+In any case, the name of the resource would be `organizations` with a class name `Organizations_ApiController`.
 
 ##Controllers
 
